@@ -2,7 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const token = process.env.BOT_TOKEN;
 const bot = new TelegramBot(token);
 
-// Service data (same as your original)
+// Service data with payment details and ID requirements
 const services = {
   "Premium Account": {
     description: "Exclusive premium account features",
@@ -27,24 +27,22 @@ const services = {
   },
 };
 
-
-// User session management
+// User session management (in-memory - for production use Redis/Vercel KV)
 const userSessions = {};
 
 // Helper function to validate user IDs
 function isValidUserId(userId) {
-  // Customize these validation rules as needed
-  return /^\d{5,12}$/.test(userId); // 5-12 digit format
+  return /^\d{5,12}$/.test(userId);
 }
 
 // /start command
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
-  userSessions[chatId] = {}; // Initialize session
+  userSessions[chatId] = {};
 
   bot.sendMessage(
     chatId,
-    `🔒 Welcome ${msg.from.first_name}! offer a variety of services unban, unlock`,
+    `🔒 Welcome ${msg.from.first_name}! We offer a variety of services including unban and unlock features.`,
     {
       reply_markup: {
         keyboard: [["📋 View Services"], ["❓ Help"], ["/start"]],
@@ -81,7 +79,6 @@ bot.on("callback_query", async (query) => {
     const serviceName = data.split("_")[1];
     const service = services[serviceName];
 
-    // Store service selection in session
     userSessions[chatId] = {
       ...(userSessions[chatId] || {}),
       selectedService: serviceName,
@@ -92,7 +89,6 @@ bot.on("callback_query", async (query) => {
       `💵 Price: ${service.price}\n` +
       `💰 Currency: ${service.currency}`;
 
-    // Buttons based on whether ID is required
     const buttons = [
       [
         {
@@ -104,7 +100,7 @@ bot.on("callback_query", async (query) => {
         {
           text: "💳 Proceed to Payment",
           callback_data: "proceed_payment",
-          hide: service.requiresUserId, // Hide if ID required
+          hide: service.requiresUserId,
         },
       ],
       [
@@ -113,7 +109,7 @@ bot.on("callback_query", async (query) => {
           callback_data: "back_to_services",
         },
       ],
-    ].filter((btn) => !btn[0].hide); // Remove hidden buttons
+    ].filter(btn => !btn[0].hide);
 
     await bot.editMessageText(serviceMessage, {
       chat_id: chatId,
@@ -124,15 +120,6 @@ bot.on("callback_query", async (query) => {
       },
     });
   }
-  // Handle address copying
-  else if (data.startsWith("copy_")) {
-    const address = data.split("_")[1];
-    bot.answerCallbackQuery(query.id, {
-      text: "Address copied to clipboard!",
-      show_alert: true,
-    });
-  }
-  // Handle payment confirmation
   else if (data === "proceed_payment") {
     const serviceName = userSessions[chatId]?.selectedService;
 
@@ -140,7 +127,6 @@ bot.on("callback_query", async (query) => {
       const service = services[serviceName];
       const verifiedId = userSessions[chatId]?.verifiedUserId;
 
-      // Check if ID is required but not verified
       if (service.requiresUserId && !verifiedId) {
         bot.answerCallbackQuery(query.id, {
           text: "❌ User ID verification required first!",
@@ -164,13 +150,10 @@ bot.on("callback_query", async (query) => {
         },
       });
 
-      // Set payment pending state
       userSessions[chatId].paymentPending = true;
     }
-
     bot.answerCallbackQuery(query.id);
   }
-  // Handle back to services
   else if (data === "back_to_services") {
     const serviceButtons = Object.keys(services).map((service) => [
       { text: service, callback_data: `service_${service}` },
@@ -187,7 +170,6 @@ bot.on("callback_query", async (query) => {
       },
     });
   }
-  // User ID verification flow
   else if (data === "verify_user_id") {
     userSessions[chatId].awaitingUserId = true;
 
@@ -203,12 +185,9 @@ bot.on("callback_query", async (query) => {
 
     bot.answerCallbackQuery(query.id);
   }
-  // Payment instructions
   else if (data === "payment_help") {
     const helpText =
       "📝 *Payment Instructions*\n\n" +
-      "To make a payment, follow these steps:\n\n" +
-      "All servies payments are made through USDT\n\n" +
       "1. Select a service\n" +
       "2. Verify User ID if required\n" +
       "3. Copy the payment address\n" +
@@ -217,20 +196,18 @@ bot.on("callback_query", async (query) => {
       "6. We'll confirm within 10 mins";
 
     bot.answerCallbackQuery(query.id, {
-      text: "Payment instructions",
+      text: helpText,
       show_alert: true,
     });
-    bot.sendMessage(chatId, helpText, { parse_mode: "Markdown" });
   }
 });
 
-// Handle user ID verification input
+// Handle text messages
 bot.on("message", (msg) => {
   if (!msg.text) return;
-
+  
   const chatId = msg.chat.id;
   const session = userSessions[chatId];
-
   if (!session) return;
 
   // Handle user ID verification
@@ -244,30 +221,19 @@ bot.on("message", (msg) => {
       bot.sendMessage(
         chatId,
         `✅ User ID ${userIdInput} verified successfully!`,
-        {
-          reply_markup: {
-            remove_keyboard: true,
-          },
-        }
+        { reply_markup: { remove_keyboard: true } }
       );
 
-      // Show payment button for the selected service
+      // Prompt for payment after verification
       const serviceName = session.selectedService;
       if (serviceName) {
-        const service = services[serviceName];
-
         bot.sendMessage(
           chatId,
           `You can now proceed with payment for "${serviceName}"`,
           {
             reply_markup: {
               inline_keyboard: [
-                [
-                  {
-                    text: "💳 Proceed to Payment",
-                    callback_data: "proceed_payment",
-                  },
-                ],
+                [{ text: "💳 Proceed to Payment", callback_data: "proceed_payment" }],
               ],
             },
           }
@@ -277,11 +243,7 @@ bot.on("message", (msg) => {
       bot.sendMessage(
         chatId,
         "❌ Invalid User ID format. Please enter 5-12 digits:",
-        {
-          reply_markup: {
-            force_reply: true,
-          },
-        }
+        { reply_markup: { force_reply: true } }
       );
     }
     return;
@@ -290,21 +252,18 @@ bot.on("message", (msg) => {
   // Handle payment confirmation
   if (session.paymentPending && msg.reply_to_message) {
     const serviceName = session.selectedService;
-    const service = services[serviceName];
-
     const txHash = msg.text.trim();
 
-    // Validate transaction hash format
     if (txHash.length > 20) {
-      const verifiedId = session.verifiedUserId
-        ? `for User ID: ${session.verifiedUserId}`
+      const verifiedId = session.verifiedUserId 
+        ? `for User ID: ${session.verifiedUserId}` 
         : "";
 
       bot.sendMessage(
         chatId,
         `✅ Payment received for ${serviceName} ${verifiedId}!\n\n` +
-          `Transaction: ${txHash}\n\n` +
-          `We'll process your order shortly. Thank you!`
+        `Transaction: ${txHash}\n\n` +
+        `We'll process your order shortly. Thank you!`
       );
 
       // Clear payment state
@@ -325,39 +284,27 @@ bot.onText(/(\/help|❓ Help)/, (msg) => {
     "/start - Launch the bot\n" +
     "/services - View services\n" +
     "/help - Show this message\n\n" +
-    "🔐 *ID Verification:*\n" +
-    "Some services require User ID verification before payment\n\n" +
-    "💳 *Payment Process:*\n" +
-    "1. Select service\n" +
-    "2. Verify ID if needed\n" +
-    "3. Copy payment address\n" +
-    "4. Send exact amount\n" +
-    "5. Reply with transaction hash";
+    "🔐 *ID Verification:* Required for some services\n" +
+    "💳 *Payment:* Always send exact amount to specified address";
 
   bot.sendMessage(msg.chat.id, helpText, { parse_mode: "Markdown" });
 });
 
-// User ID verification status command
+// User ID verification status
 bot.onText(/\/myid/, (msg) => {
   const chatId = msg.chat.id;
   const session = userSessions[chatId];
 
   if (session?.verifiedUserId) {
-    bot.sendMessage(
-      chatId,
-      `✅ Your verified User ID: ${session.verifiedUserId}`
-    );
+    bot.sendMessage(chatId, `✅ Your verified User ID: ${session.verifiedUserId}`);
   } else {
-    bot.sendMessage(
-      chatId,
-      "❌ No verified User ID found. Please verify through service selection."
-    );
+    bot.sendMessage(chatId, "❌ No verified User ID found");
   }
 });
 
-// Admin command to verify IDs manually
+// Admin verification command
 bot.onText(/\/verify (.+)/, (msg, match) => {
-  const adminId = "YOUR_ADMIN_USER_ID"; // Replace with your actual admin ID
+  const adminId = process.env.ADMIN_ID;
   if (msg.from.id.toString() !== adminId) return;
 
   const userId = match[1];
@@ -365,17 +312,16 @@ bot.onText(/\/verify (.+)/, (msg, match) => {
 
   if (isValidUserId(userId)) {
     bot.sendMessage(chatId, `✅ Admin verified User ID: ${userId}`);
-
-    // Notify users with this ID in session
+    
+    // Notify users with this ID
     Object.entries(userSessions).forEach(([cid, session]) => {
       if (session.verifiedUserId === userId) {
-        bot.sendMessage(
-          cid,
-          `🌟 Your User ID ${userId} has been verified by admin!`
-        );
+        bot.sendMessage(cid, `🌟 Your User ID ${userId} has been verified by admin!`);
       }
     });
   } else {
     bot.sendMessage(chatId, `❌ Invalid User ID format: ${userId}`);
   }
 });
+
+module.exports = bot;
