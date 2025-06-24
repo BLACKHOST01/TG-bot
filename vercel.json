@@ -1,10 +1,8 @@
 {
-  "rewrites": [{ "source": "/api/bot", "destination": "/api/bot.js" }],
+  "builds": [{"src": "api/*.js", "use": "@vercel/node"}],
   "routes": [
-    {
-      "src": "/api/bot",
-      "dest": "/api/bot.js"
-    }
+    {"src": "/api/bot", "dest": "/api/bot.js"},
+    {"src": "/", "dest": "/api/bot.js"}
   ],
   "env": {
     "BOT_TOKEN": "7915955632:AAGzahIfI8H3RnkYlKCJdq2FlsAE4ku5CgU",
