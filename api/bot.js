@@ -1,33 +1,43 @@
 const { run } = require('micro');
 const bot = require('../utils/botCore');
-const BOT_TOKEN = process.env.BOT_TOKEN;
 
-module.exports = async (req, res) => {
-  try {
-    if (req.method === 'POST') {
-      const update = await json(req);
-      await bot.handleUpdate(update);
-      return 'OK';
+// Parse JSON request body
+const parseJson = req => new Promise(resolve => {
+  let data = '';
+  req.on('data', chunk => data += chunk);
+  req.on('end', () => {
+    try {
+      resolve(JSON.parse(data));
+    } catch {
+      resolve({});
     }
-    
-    // Set webhook on first access (do this only once!)
-    if (!process.env.WEBHOOK_SET) {
+  });
+});
+
+// Webhook handler
+module.exports = async (req, res) => {
+  if (req.method === 'POST') {
+    try {
+      const update = await parseJson(req);
+      await bot.processUpdate(update);
+      return 'OK';
+    } catch (error) {
+      console.error('Error processing update:', error);
+      return { status: 500, body: 'Internal Server Error' };
+    }
+  }
+  
+  // Set webhook on first access
+  if (!process.env.WEBHOOK_SET) {
+    try {
       const webhookUrl = `https://${req.headers.host}/api/bot`;
       await bot.setWebHook(webhookUrl);
       console.log(`Webhook set to: ${webhookUrl}`);
       process.env.WEBHOOK_SET = 'true';
+    } catch (error) {
+      console.error('Error setting webhook:', error);
     }
-    
-    return 'Telegram Bot is running!';
-  } catch (error) {
-    console.error('Error:', error);
-    return 'Error occurred';
   }
+  
+  return 'Telegram Bot is running!';
 };
-
-// Helper to parse JSON
-const json = req => new Promise(resolve => {
-  let data = '';
-  req.on('data', chunk => data += chunk);
-  req.on('end', () => resolve(JSON.parse(data)));
-});

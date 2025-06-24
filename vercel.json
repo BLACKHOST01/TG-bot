@@ -1,5 +1,11 @@
 {
   "rewrites": [{ "source": "/api/bot", "destination": "/api/bot.js" }],
+  "routes": [
+    {
+      "src": "/api/bot",
+      "dest": "/api/bot.js"
+    }
+  ],
   "env": {
     "BOT_TOKEN": "7915955632:AAGzahIfI8H3RnkYlKCJdq2FlsAE4ku5CgU",
     "ADMIN_ID": "@hack9t"
